@@ -156,42 +156,47 @@ function setSyncStatus(status, message) {
 }
 
 // ==========================================
-// KONEKSI DATABASE AWAL & SYNC (KVDB.io)
+// KONEKSI DATABASE AWAL & SYNC (ExtendsClass JSON Storage)
 // ==========================================
 
-// Membuat bucket database baru
+// Membuat database baru di cloud (Mengembalikan ID Bin)
 async function createNewBucket() {
   setSyncStatus("syncing", "Membuat celengan...");
   try {
-    const res = await fetch("https://kvdb.io/new", { method: "POST" });
+    const res = await fetch("https://extendsclass.com/api/json-storage/bin", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(defaultData)
+    });
+    
     if (!res.ok) throw new Error("Gagal membuat database baru di cloud.");
-    const bucketId = await res.text();
-    return bucketId.trim();
+    const result = await res.json();
+    return result.id;
   } catch (err) {
-    alert("Koneksi internet bermasalah. Gagal membuat celengan online.");
+    alert("Koneksi internet bermasalah atau terblokir. Gagal membuat celengan online.");
     throw err;
   }
 }
 
-// Mengambil data dari KVDB
+// Mengambil data dari ExtendsClass
 async function fetchData() {
   if (!savingsCode || isFetching) return;
   isFetching = true;
   setSyncStatus("syncing", "Sinkronisasi...");
   
   try {
-    const response = await fetch(`https://kvdb.io/${savingsCode}/savings`);
+    const response = await fetch(`https://extendsclass.com/api/json-storage/bin/${savingsCode}`);
     if (response.status === 404) {
-      // Jika kosong (bucket baru), inisialisasi dengan data default
-      state = JSON.parse(JSON.stringify(defaultData));
-      await saveToCloud();
+      alert("Celengan tidak ditemukan di cloud!");
+      setSyncStatus("error", "Error 404");
     } else {
       if (!response.ok) throw new Error("Gagal mengambil data dari cloud.");
       state = await response.json();
+      renderUI();
+      setSyncStatus("success", "Tersinkronisasi");
     }
-    
-    renderUI();
-    setSyncStatus("success", "Tersinkronisasi");
   } catch (error) {
     console.error("Fetch error:", error);
     setSyncStatus("error", "Koneksi terputus");
@@ -200,13 +205,16 @@ async function fetchData() {
   }
 }
 
-// Menyimpan data ke KVDB
+// Menyimpan data ke ExtendsClass
 async function saveToCloud() {
   if (!savingsCode) return;
   setSyncStatus("syncing", "Menyimpan data...");
   try {
-    const response = await fetch(`https://kvdb.io/${savingsCode}/savings`, {
-      method: 'POST',
+    const response = await fetch(`https://extendsclass.com/api/json-storage/bin/${savingsCode}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify(state)
     });
     
@@ -238,7 +246,6 @@ async function checkAuth() {
     showMainAppView();
   } else if (codeInLocal) {
     savingsCode = codeInLocal;
-    // Tambahkan parameter ke URL tanpa reload agar bisa disalin linknya langsung
     window.history.pushState({}, '', `?code=${savingsCode}`);
     showMainAppView();
   } else {
@@ -274,9 +281,8 @@ btnCreateNewJar.addEventListener("click", async () => {
     localStorage.setItem('savingsCode', savingsCode);
     window.history.pushState({}, '', `?code=${savingsCode}`);
     
-    // Setup data default
+    // Set data lokal
     state = JSON.parse(JSON.stringify(defaultData));
-    await saveToCloud();
     
     showMainAppView();
   } catch (err) {
@@ -311,15 +317,13 @@ btnSubmitJoin.addEventListener("click", async () => {
   setSyncStatus("syncing", "Menghubungkan...");
 
   try {
-    // Verifikasi apakah kode ada datanya di KVDB
-    const res = await fetch(`https://kvdb.io/${code}/savings`);
+    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${code}`);
     if (res.status === 404) {
-      alert("Kode Celengan tidak valid atau belum pernah dibuat!");
+      alert("Kode Celengan tidak valid atau tidak ditemukan!");
       setSyncStatus("error", "Kode salah");
     } else if (!res.ok) {
       throw new Error("Gagal verifikasi data.");
     } else {
-      // Kode valid!
       savingsCode = code;
       localStorage.setItem('savingsCode', savingsCode);
       window.history.pushState({}, '', `?code=${savingsCode}`);
@@ -338,11 +342,9 @@ btnSubmitJoin.addEventListener("click", async () => {
 // ==========================================
 
 function renderUI() {
-  // 1. Update CSS Variables untuk tema profil
   document.documentElement.style.setProperty('--user1-color', state.profiles.user1.color);
   document.documentElement.style.setProperty('--user2-color', state.profiles.user2.color);
 
-  // 2. Update Info Profil
   headerUser1.innerText = state.profiles.user1.name;
   headerUser2.innerText = state.profiles.user2.name;
   labelSelectUser1.innerText = state.profiles.user1.name;
@@ -355,7 +357,6 @@ function renderUI() {
   user1AvatarIcon.innerText = state.profiles.user1.avatar.length <= 2 ? state.profiles.user1.avatar : (avatarEmojis[state.profiles.user1.avatar] || "🧑‍💻");
   user2AvatarIcon.innerText = state.profiles.user2.avatar.length <= 2 ? state.profiles.user2.avatar : (avatarEmojis[state.profiles.user2.avatar] || "👩‍💻");
 
-  // 3. Kalkulasi Kontribusi
   let user1Total = 0;
   let user2Total = 0;
   let totalDeposits = 0;
@@ -397,7 +398,6 @@ function renderUI() {
   splitProgressUser1.style.width = `${user1Pct}%`;
   splitProgressUser2.style.width = `${user2Pct}%`;
 
-  // Render Target, Tantangan, dan Transaksi
   renderGoals(netBalance);
   renderChallenge();
   renderTransactions();
@@ -891,23 +891,19 @@ function triggerMegaConfetti() {
 // SHARING & LOGOUT COUPLING
 // ==========================================
 
-// Salin kode hubung dan link ke clipboard
 btnShareCode.addEventListener("click", () => {
   const shareUrl = `${window.location.origin}${window.location.pathname}?code=${savingsCode}`;
   navigator.clipboard.writeText(shareUrl).then(() => {
     alert(`Link Hubung Berhasil Disalin! 💖\n\nKirim link ini ke pasangan Anda agar dia bisa langsung tersambung:\n${shareUrl}`);
   }).catch(() => {
-    // Fallback jika clipboard API gagal
     alert(`Kode Celengan Anda: ${savingsCode}\nSalin kode ini dan kirim ke pasangan Anda.`);
   });
 });
 
-// Logout / Putuskan koneksi celengan
 btnLogout.addEventListener("click", () => {
   if (confirm("Apakah Anda yakin ingin memutuskan koneksi dari celengan ini?\n\n(Data Anda di cloud tidak akan terhapus, Anda bisa bergabung kembali nanti menggunakan kode yang sama).")) {
     localStorage.removeItem('savingsCode');
     savingsCode = "";
-    // Hapus parameter query di URL
     window.history.pushState({}, '', window.location.pathname);
     showStartupView();
   }
