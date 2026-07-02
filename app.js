@@ -156,14 +156,22 @@ function setSyncStatus(status, message) {
 }
 
 // ==========================================
-// KONEKSI DATABASE AWAL & SYNC (ExtendsClass JSON Storage)
+// KONEKSI DATABASE AWAL & SYNC (Vercel Serverless KV)
 // ==========================================
 
-// Membuat database baru di cloud (Mengembalikan ID Bin)
+// Membuat database baru di cloud (Mengembalikan Kode Celengan Acak)
 async function createNewBucket() {
   setSyncStatus("syncing", "Membuat celengan...");
   try {
-    const res = await fetch("https://extendsclass.com/api/json-storage/bin", {
+    // Generate kode acak 8 karakter
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let randomCode = "";
+    for (let i = 0; i < 8; i++) {
+      randomCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    
+    // Simpan data awal ke Vercel KV melalui API lokal kita
+    const res = await fetch(`/api/savings?code=${randomCode}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -171,25 +179,24 @@ async function createNewBucket() {
       body: JSON.stringify(defaultData)
     });
     
-    if (!res.ok) throw new Error("Gagal membuat database baru di cloud.");
-    const result = await res.json();
-    return result.id;
+    if (!res.ok) throw new Error("Gagal menginisialisasi database.");
+    return randomCode;
   } catch (err) {
-    alert("Koneksi internet bermasalah atau terblokir. Gagal membuat celengan online.");
+    alert("Gagal terhubung ke Vercel API. Pastikan Vercel KV Storage sudah aktif di dashboard Vercel.");
     throw err;
   }
 }
 
-// Mengambil data dari ExtendsClass
+// Mengambil data dari Vercel KV
 async function fetchData() {
   if (!savingsCode || isFetching) return;
   isFetching = true;
   setSyncStatus("syncing", "Sinkronisasi...");
   
   try {
-    const response = await fetch(`https://extendsclass.com/api/json-storage/bin/${savingsCode}`);
+    const response = await fetch(`/api/savings?code=${savingsCode}`);
     if (response.status === 404) {
-      alert("Celengan tidak ditemukan di cloud!");
+      alert("Celengan tidak ditemukan! Periksa kembali kode hubung Anda.");
       setSyncStatus("error", "Error 404");
     } else {
       if (!response.ok) throw new Error("Gagal mengambil data dari cloud.");
@@ -205,13 +212,13 @@ async function fetchData() {
   }
 }
 
-// Menyimpan data ke ExtendsClass
+// Menyimpan data ke Vercel KV
 async function saveToCloud() {
   if (!savingsCode) return;
   setSyncStatus("syncing", "Menyimpan data...");
   try {
-    const response = await fetch(`https://extendsclass.com/api/json-storage/bin/${savingsCode}`, {
-      method: 'PUT',
+    const response = await fetch(`/api/savings?code=${savingsCode}`, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
@@ -280,10 +287,7 @@ btnCreateNewJar.addEventListener("click", async () => {
     savingsCode = newCode;
     localStorage.setItem('savingsCode', savingsCode);
     window.history.pushState({}, '', `?code=${savingsCode}`);
-    
-    // Set data lokal
     state = JSON.parse(JSON.stringify(defaultData));
-    
     showMainAppView();
   } catch (err) {
     console.error(err);
@@ -317,7 +321,7 @@ btnSubmitJoin.addEventListener("click", async () => {
   setSyncStatus("syncing", "Menghubungkan...");
 
   try {
-    const res = await fetch(`https://extendsclass.com/api/json-storage/bin/${code}`);
+    const res = await fetch(`/api/savings?code=${code}`);
     if (res.status === 404) {
       alert("Kode Celengan tidak valid atau tidak ditemukan!");
       setSyncStatus("error", "Kode salah");
