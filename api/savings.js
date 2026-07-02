@@ -4,6 +4,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing code parameter" });
   }
 
+  // Mendukung env dari Vercel KV maupun integrasi Upstash langsung
   const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 
@@ -17,6 +18,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      // Mengambil data dari Upstash
       const response = await fetch(`${url}/get/${key}`, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -36,12 +38,13 @@ export default async function handler(req, res) {
     if (req.method === 'POST' || req.method === 'PUT') {
       const stateData = req.body;
       
+      // Menyimpan data ke Upstash
       const response = await fetch(`${url}/set/${key}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(JSON.stringify(stateData))
+        body: JSON.stringify(stateData)
       });
       
       const result = await response.json();
